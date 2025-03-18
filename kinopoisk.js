@@ -1,35 +1,32 @@
 (function() {
     var plugin = {
         name: 'KP Rating on Cards',
-        version: '1.0',
+        version: '1.1',
         run: function() {
-            // Проверка авторизации
-            var token = Lampa.Storage.get('kinopoisk_token', '');
-            if (!token) {
-                Lampa.Noty.show('Авторизуйтесь в Кинопоиске через настройки плагина');
-                return;
-            }
-
-            // Перехват отрисовки карточек в списке
             Lampa.Listener.follow('hover', function(e) {
-                var item = e.data;
-                var element = e.element;
-
-                // Предполагаем, что рейтинг уже доступен как item.ratingKinopoisk
-                var kp_rating = item.ratingKinopoisk || 'N/A';
-                if (kp_rating !== 'N/A') {
+                try {
+                    var item = e.data;
+                    var element = e.element;
+                    var kp_rating = item.ratingKinopoisk || item.kp_rating || null;
+                    if (!kp_rating) {
+                        if (!Lampa.Storage.get('kp_rating_missing_notified', false)) {
+                            Lampa.Noty.show('Рейтинг Кинопоиска недоступен.');
+                            Lampa.Storage.set('kp_rating_missing_notified', true);
+                        }
+                        return;
+                    }
                     var rating_block = element.find('.card__rating');
                     if (rating_block.length) {
                         rating_block.find('.kp-rating').remove();
-                        rating_block.append(
-                            '<span class="kp-rating" style="margin-left: 5px; color: #f5c518; font-size: 12px; font-weight: bold;">KP: ' + kp_rating + '</span>'
-                        );
+                        var rating_color = kp_rating >= 7 ? '#00cc00' : kp_rating >= 5 ? '#f5c518' : '#ff3333';
+                        rating_block.append('<span class="kp-rating" style="margin-left: 5px; color: ' + rating_color + '; font-size: 12px; font-weight: bold;">KP: ' + kp_rating + '</span>');
                     }
+                } catch (err) {
+                    console.error('Ошибка в плагине:', err);
                 }
             });
         }
     };
-
     if (window.Lampa) {
         window.Lampa.Plugin.add(plugin);
     }
