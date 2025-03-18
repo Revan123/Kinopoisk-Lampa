@@ -1,9 +1,9 @@
 (function() {
     var plugin = {
         name: 'KP Rating on Cards',
-        version: '1.1',
+        version: '1.2',
         run: function() {
-            Lampa.Listener.follow('hover', function(e) {
+            Lampa.Listener.follow('render', function(e) {
                 try {
                     var item = e.data;
                     var element = e.element;
