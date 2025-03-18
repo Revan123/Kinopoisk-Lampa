@@ -1,80 +1,33 @@
 (function() {
-    // Ждём полной загрузки Lampa
-    function checkLampa() {
-        if (window.Lampa) {
-            startPlugin();
-        } else {
-            setTimeout(checkLampa, 100);
-        }
-    }
+    var plugin = {
+        name: 'KP Rating on Cards',
+        version: '1.0',
+        run: function() {
+            // Перехватываем событие отрисовки карточек
+            Lampa.Listener.follow('hover', function(e) {
+                var item = e.data; // Данные фильма/сериала
+                var element = e.element; // DOM-элемент карточки
 
-    function startPlugin() {
-        var plugin = {
-            name: 'KP Rating on Cards',
-            version: '1.6',
-            run: function() {
-                Lampa.Listener.follow('app', function() {
-                    // Ждём загрузки компонента карточек
-                    function checkCardComponent() {
-                        if (Lampa.Component && Lampa.Component.card) {
-                            initializePlugin();
-                        } else {
-                            setTimeout(checkCardComponent, 100);
-                        }
+                // Проверяем наличие рейтинга Кинопоиска
+                var kp_rating = item.ratingKinopoisk || item.kp_rating || 'N/A';
+                if (kp_rating && kp_rating !== 'N/A') {
+                    // Находим блок рейтинга TMDB
+                    var rating_block = element.find('.card__rating');
+                    if (rating_block.length) {
+                        // Удаляем старый рейтинг KP, если он уже есть (чтобы не дублировать)
+                        rating_block.find('.kp-rating').remove();
+                        // Добавляем рейтинг Кинопоиска рядом с TMDB
+                        rating_block.append(
+                            '<span class="kp-rating" style="margin-left: 5px; color: #f5c518; font-size: 12px; font-weight: bold;">KP: ' + kp_rating + '</span>'
+                        );
                     }
-                    checkCardComponent();
-                });
-            }
-        };
-
-        function initializePlugin() {
-            var originalCardRender = Lampa.Component.card;
-            
-            Lampa.Component.card = function(card, element) {
-                var result = originalCardRender.apply(this, arguments);
-                
-                // Добавляем try-catch для безопасности
-                try {
-                    if (card && element) {
-                        var rating = parseFloat(card.rating_kp || card.kinopoisk_rating || 
-                                             card.kp_rating || (card.ratings && card.ratings.kp) || 
-                                             (card.rating && card.rating.kp));
-                        
-                        if (rating && !isNaN(rating)) {
-                            var rating_block = $(element).find('.card__rating');
-                            if (rating_block.length) {
-                                var rating_color = rating >= 7 ? '#00cc00' : 
-                                                 rating >= 5 ? '#f5c518' : '#ff3333';
-                                
-                                // Проверяем, нет ли уже добавленного рейтинга
-                                if (!rating_block.find('.kp-rating').length) {
-                                    rating_block.append(
-                                        $('<div class="kp-rating"></div>')
-                                            .css({
-                                                'margin-left': '5px',
-                                                'color': rating_color,
-                                                'font-size': '1em',
-                                                'font-weight': 'bold',
-                                                'display': 'inline-block'
-                                            })
-                                            .text('KP ' + rating.toFixed(1))
-                                    );
-                                }
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error('KP Rating plugin error:', error);
                 }
-                
-                return result;
-            };
+            });
         }
+    };
 
-        // Регистрируем плагин
-        Lampa.Plugin.add(plugin);
+    // Регистрация плагина
+    if (window.Lampa) {
+        window.Lampa.Plugin.add(plugin);
     }
-
-    // Запускаем проверку наличия Lampa
-    checkLampa();
 })();
