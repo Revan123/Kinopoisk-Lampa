@@ -1,170 +1,119 @@
-var plugin = {
-    version: "1.0.9", // Обновляем версию для ясности
-    name: "Кинопоиск",
-    description: "Показывает оценки с Кинопоиска в карточках Lampa",
-    autor: "Revan",
-    icon: "https://www.kinopoisk.ru/favicon.ico",
-    settings: {
-        status: true,
-        auth: {
-            name: "Авторизация",
-            description: "Авторизоваться в Кинопоиске",
-            onPress: function () {
-                plugin.auth();
-            }
-        },
-        logout: {
-            name: "Выйти",
-            description: "Сбросить авторизацию",
-            onPress: function () {
-                Lampa.Storage.set('kinopoisk_token', '');
-                Lampa.Storage.set('kinopoisk_user', '{}');
-                plugin.check();
-            }
-        }
-    },
+let Kinopoisk = {
+    API_KEY: '6EFFPRV-1314X37-GEJ8XB9-04D4GQ5',
+    BASE_URL: 'https://api.kinopoisk.dev/v1.4',
 
-    // Проверка авторизации
-    check: function () {
-        var token = Lampa.Storage.get('kinopoisk_token', '');
-        if (token) {
-            plugin.get('https://kinopoiskapiunofficial.tech/api/v1/staff', function (data) {
-                if (data.error) {
-                    Lampa.Storage.set('kinopoisk_token', '');
-                    Lampa.Storage.set('kinopoisk_user', '{}');
-                    plugin.auth();
-                } else {
-                    Lampa.Storage.set('kinopoisk_user', JSON.stringify(data));
-                    Lampa.Noty.show('Авторизация успешна');
-                }
-            });
-        }
-    },
-
-    // Метод авторизации
-    auth: function () {
-        var token = Lampa.Storage.get('kinopoisk_token', '');
-        if (!token) {
-            var uuid = Lampa.Utils.uid(32);
-            Lampa.Iframe.show({
-                url: 'https://www.kinopoisk.ru/api/auth/authorize?client_id=web&response_type=code&state=' + uuid,
-                onBack: function () {
-                    Lampa.Modal.close();
-                },
-                onComplite: function (data) {
-                    var code = data.url.match(/code=([^&]+)/);
-                    if (code) {
-                        plugin.get('https://kinopoiskapiunofficial.tech/api/v1/auth/token?code=' + code[1], function (token_data) {
-                            if (token_data.access_token) {
-                                Lampa.Storage.set('kinopoisk_token', token_data.access_token);
-                                plugin.check();
-                            } else {
-                                Lampa.Noty.show('Ошибка авторизации: ' + (token_data.error_description || 'Неизвестная ошибка'));
-                            }
-                        }, function () {
-                            Lampa.Noty.show('Не удалось получить токен. Проверьте подключение к интернету.');
-                        });
-                    }
-                }
-            });
-        } else {
-            plugin.check();
-        }
-    },
-
-    // Метод для выполнения запросов к API с повторными попытками
-    get: function (url, onsuccess, onerror, retryCount = 3) {
-        var token = Lampa.Storage.get('kinopoisk_token', '');
-        var network = new Lampa.Network();
-
-        var headers = {
-            'Authorization': 'Bearer ' + token,
-            'Accept': 'application/json'
+    // Универсальная функция для запросов к API
+    fetchAPI: function (url, params, callback) {
+        let fullUrl = this.BASE_URL + url;
+        let headers = {
+            'X-API-KEY': this.API_KEY
         };
 
-        var attemptRequest = function (attempt) {
-            network.silent(url, function (data) {
-                if (data) {
-                    onsuccess(data);
-                } else {
-                    if (attempt < retryCount) {
-                        setTimeout(function () {
-                            attemptRequest(attempt + 1);
-                        }, 1000 * attempt); // Задержка увеличивается с каждой попыткой
-                    } else {
-                        if (onerror) onerror();
-                        Lampa.Noty.show('Ошибка загрузки данных с Кинопоиска после ' + retryCount + ' попыток');
-                    }
-                }
-            }, function () {
-                if (attempt < retryCount) {
-                    setTimeout(function () {
-                        attemptRequest(attempt + 1);
-                    }, 1000 * attempt);
-                } else {
-                    if (onerror) onerror();
-                    Lampa.Noty.show('Ошибка сети при запросе к Кинопоиску после ' + retryCount + ' попыток');
-                }
-            }, false, { headers: headers });
-        };
-
-        attemptRequest(1);
+        Network.get(fullUrl, params, headers).then((response) => {
+            let json = JSON.parse(response);
+            callback(json);
+        }).catch((error) => {
+            console.error('Kinopoisk API Error:', error);
+            callback({ error: true });
+        });
     },
 
-    // Добавление оценок в карточки фильмов
-    card: function (item) {
-        var token = Lampa.Storage.get('kinopoisk_token', '');
-        if (token && item.movie && (item.movie.imdb_id || item.movie.kinopoisk_id)) {
-            var id = item.movie.kinopoisk_id || item.movie.imdb_id;
-            var type = item.movie.kinopoisk_id ? 'kp' : 'imdb';
-
-            plugin.get('https://kinopoiskapiunofficial.tech/api/v2.2/films/' + id + '/ratings?type=' + type, function (data) {
-                if (data.rating) {
-                    item.rating_kinopoisk = '★ ' + data.rating;
-                    Lampa.Controller.refresh();
-                }
-            }, function () {
-                console.log('Kinopoisk: Не удалось загрузить рейтинг для фильма ' + id);
-            });
-        }
-    },
-
-    // Меню плагина
-    menu: function (menu_items) {
-        var token = Lampa.Storage.get('kinopoisk_token', '');
-        menu_items.push({
-            title: 'Кинопоиск',
-            subtitle: token ? 'Авторизован' : 'Не авторизован',
-            onSelect: function () {
-                if (token) {
-                    plugin.settings.logout.onPress();
-                } else {
-                    plugin.auth();
-                }
+    // Поиск фильмов
+    search: function (params, callback) {
+        let query = params.query || '';
+        this.fetchAPI('/movie/search', { query: query, limit: 10 }, (data) => {
+            if (data.error || !data.docs) {
+                callback({ results: [] });
+                return;
             }
+
+            let results = data.docs.map(item => ({
+                id: item.id,
+                title: item.name || item.alternativeName || 'Без названия',
+                year: item.year,
+                poster: item.poster?.url || '',
+                rating: item.rating?.kp || item.rating?.imdb || 0,
+                type: item.type
+            }));
+
+            callback({ results: results });
         });
     },
 
-    // Подписка на события Lampa
-    bind: function () {
-        Lampa.Listener.follow('render', function (e) {
-            var items = e.items || [];
-            items.forEach(function (item) {
-                if (item.movie) plugin.card(item);
-            });
-        });
+    // Получение полной информации о фильме по ID
+    full: function (id, callback) {
+        this.fetchAPI('/movie/' + id, {}, (data) => {
+            if (data.error || !data) {
+                callback({ error: true });
+                return;
+            }
 
-        Lampa.Listener.follow('menu', function (e) {
-            plugin.menu(e.items);
+            let movie = {
+                id: data.id,
+                title: data.name || data.alternativeName || 'Без названия',
+                original_title: data.alternativeName || data.name,
+                description: data.description || '',
+                year: data.year,
+                poster: data.poster?.url || '',
+                rating: data.rating?.kp || data.rating?.imdb || 0,
+                genres: data.genres?.map(g => g.name) || [],
+                countries: data.countries?.map(c => c.name) || [],
+                actors: data.persons?.filter(p => p.enProfession === 'actor').map(p => p.name) || [],
+                directors: data.persons?.filter(p => p.enProfession === 'director').map(p => p.name) || [],
+                runtime: data.movieLength || 0,
+                release_date: data.premiere?.world || ''
+            };
+
+            callback(movie);
         });
     },
 
-    // Инициализация плагина
-    init: function () {
-        plugin.check();
-        plugin.bind();
+    // Получение похожих фильмов
+    similar: function (id, callback) {
+        this.fetchAPI('/movie/' + id, {}, (data) => {
+            if (data.error || !data.similarMovies) {
+                callback([]);
+                return;
+            }
+
+            let similar = data.similarMovies.map(item => ({
+                id: item.id,
+                title: item.name || item.alternativeName || 'Без названия',
+                poster: item.poster?.url || ''
+            }));
+
+            callback(similar);
+        });
+    },
+
+    // Категории (пример для популярных фильмов)
+    category: function (params, callback) {
+        let page = params.page || 1;
+        this.fetchAPI('/movie', { 
+            sortField: 'rating.kp', 
+            sortType: '-1', 
+            limit: 10, 
+            page: page 
+        }, (data) => {
+            if (data.error || !data.docs) {
+                callback({ results: [] });
+                return;
+            }
+
+            let results = data.docs.map(item => ({
+                id: item.id,
+                title: item.name || item.alternativeName || 'Без названия',
+                year: item.year,
+                poster: item.poster?.url || '',
+                rating: item.rating?.kp || item.rating?.imdb || 0
+            }));
+
+            callback({ results: results, total_pages: data.pages });
+        });
     }
 };
 
-// Запуск плагина
-plugin.init();
+// Пример использования (оставлен для совместимости с исходным кодом)
+if (typeof module !== 'undefined') {
+    module.exports = Kinopoisk;
+}
