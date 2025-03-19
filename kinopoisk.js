@@ -1,119 +1,72 @@
-let Kinopoisk = {
-    API_KEY: '6EFFPRV-1314X37-GEJ8XB9-04D4GQ5',
-    BASE_URL: 'https://api.kinopoisk.dev/v1.4',
+(function () {
+    'use strict';
 
-    // Универсальная функция для запросов к API
-    fetchAPI: function (url, params, callback) {
-        let fullUrl = this.BASE_URL + url;
-        let headers = {
-            'X-API-KEY': this.API_KEY
-        };
+    // Объект плагина
+    var plugin = {
+        name: 'Случайный фильм',
+        version: '1.0',
+        description: 'Добавляет кнопку для выбора случайного фильма на главную',
+        init: function () {
+            // Ждём загрузки интерфейса Lampa
+            Lampa.Listener.follow('app', function (e) {
+                if (e.type == 'ready') {
+                    // Добавляем кнопку на главную страницу
+                    addRandomButton();
+                }
+            });
+        }
+    };
 
-        Network.get(fullUrl, params, headers).then((response) => {
-            let json = JSON.parse(response);
-            callback(json);
-        }).catch((error) => {
-            console.error('Kinopoisk API Error:', error);
-            callback({ error: true });
-        });
-    },
+    // Функция добавления кнопки
+    function addRandomButton() {
+        // Проверяем, что главная страница загружена
+        if (!Lampa.Menu || !Lampa.Activity) return;
 
-    // Поиск фильмов
-    search: function (params, callback) {
-        let query = params.query || '';
-        this.fetchAPI('/movie/search', { query: query, limit: 10 }, (data) => {
-            if (data.error || !data.docs) {
-                callback({ results: [] });
-                return;
-            }
+        // Создаём кнопку
+        var button = $('<div class="menu__item selector" data-action="random_movie"><span>Случайный фильм</span></div>');
 
-            let results = data.docs.map(item => ({
-                id: item.id,
-                title: item.name || item.alternativeName || 'Без названия',
-                year: item.year,
-                poster: item.poster?.url || '',
-                rating: item.rating?.kp || item.rating?.imdb || 0,
-                type: item.type
-            }));
+        // Добавляем кнопку в меню на главной
+        $('.menu .menu__list').append(button);
 
-            callback({ results: results });
-        });
-    },
-
-    // Получение полной информации о фильме по ID
-    full: function (id, callback) {
-        this.fetchAPI('/movie/' + id, {}, (data) => {
-            if (data.error || !data) {
-                callback({ error: true });
-                return;
-            }
-
-            let movie = {
-                id: data.id,
-                title: data.name || data.alternativeName || 'Без названия',
-                original_title: data.alternativeName || data.name,
-                description: data.description || '',
-                year: data.year,
-                poster: data.poster?.url || '',
-                rating: data.rating?.kp || data.rating?.imdb || 0,
-                genres: data.genres?.map(g => g.name) || [],
-                countries: data.countries?.map(c => c.name) || [],
-                actors: data.persons?.filter(p => p.enProfession === 'actor').map(p => p.name) || [],
-                directors: data.persons?.filter(p => p.enProfession === 'director').map(p => p.name) || [],
-                runtime: data.movieLength || 0,
-                release_date: data.premiere?.world || ''
-            };
-
-            callback(movie);
-        });
-    },
-
-    // Получение похожих фильмов
-    similar: function (id, callback) {
-        this.fetchAPI('/movie/' + id, {}, (data) => {
-            if (data.error || !data.similarMovies) {
-                callback([]);
-                return;
-            }
-
-            let similar = data.similarMovies.map(item => ({
-                id: item.id,
-                title: item.name || item.alternativeName || 'Без названия',
-                poster: item.poster?.url || ''
-            }));
-
-            callback(similar);
-        });
-    },
-
-    // Категории (пример для популярных фильмов)
-    category: function (params, callback) {
-        let page = params.page || 1;
-        this.fetchAPI('/movie', { 
-            sortField: 'rating.kp', 
-            sortType: '-1', 
-            limit: 10, 
-            page: page 
-        }, (data) => {
-            if (data.error || !data.docs) {
-                callback({ results: [] });
-                return;
-            }
-
-            let results = data.docs.map(item => ({
-                id: item.id,
-                title: item.name || item.alternativeName || 'Без названия',
-                year: item.year,
-                poster: item.poster?.url || '',
-                rating: item.rating?.kp || item.rating?.imdb || 0
-            }));
-
-            callback({ results: results, total_pages: data.pages });
+        // Обработчик клика по кнопке
+        button.on('hover:enter', function () {
+            getRandomMovie();
         });
     }
-};
 
-// Пример использования (оставлен для совместимости с исходным кодом)
-if (typeof module !== 'undefined') {
-    module.exports = Kinopoisk;
-}
+    // Функция получения случайного фильма
+    function getRandomMovie() {
+        // Используем TMDB API через встроенный каталог Lampa
+        var api_url = 'http://api.themoviedb.org/3/discover/movie?api_key=4ef0d7355d9ffb5151e987764708ce96&language=ru&sort_by=popularity.desc&page=' + Math.floor(Math.random() * 100) + 1;
+
+        Lampa.Utils.get(api_url, function (data) {
+            if (data.results && data.results.length) {
+                // Выбираем случайный фильм из списка
+                var movie = data.results[Math.floor(Math.random() * data.results.length)];
+
+                // Открываем карточку фильма
+                Lampa.Activity.push({
+                    url: '',
+                    title: movie.title || movie.name,
+                    component: 'full',
+                    id: movie.id,
+                    type: 'movie',
+                    source: 'tmdb'
+                });
+            } else {
+                Lampa.Utils.toast('Не удалось загрузить фильмы');
+            }
+        }, function () {
+            Lampa.Utils.toast('Ошибка загрузки');
+        });
+    }
+
+    // Регистрация плагина
+    if (!window.plugins) window.plugins = {};
+    window.plugins['random_movie'] = plugin;
+
+    // Сообщаем Lampa, что плагин готов
+    if (window.Lampa) {
+        Lampa.Plugin.register(plugin);
+    }
+})();
